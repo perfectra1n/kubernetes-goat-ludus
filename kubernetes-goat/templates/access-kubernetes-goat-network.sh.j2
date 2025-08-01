@@ -1,0 +1,67 @@
+#!/bin/bash
+
+# Custom access script for Kubernetes Goat with network binding
+# This script exposes services to the network instead of just localhost
+
+BIND_ADDRESS="{{ kubernetes_goat_bind_address }}"
+
+echo "Starting Kubernetes Goat network access on ${BIND_ADDRESS}"
+
+# Function to check if pod is running
+wait_for_pod() {
+    local app_label=$1
+    local timeout=300
+    local count=0
+    
+    echo "Waiting for pod with label app=${app_label} to be ready..."
+    while [ $count -lt $timeout ]; do
+        if kubectl get pods -l app=${app_label} -o jsonpath='{.items[0].status.phase}' 2>/dev/null | grep -q "Running"; then
+            echo "Pod ${app_label} is ready"
+            return 0
+        fi
+        sleep 5
+        count=$((count + 5))
+    done
+    echo "Timeout waiting for pod ${app_label}"
+    return 1
+}
+
+# Start port forwarding for each service
+echo "Setting up port forwarding..."
+
+# Sensitive keys in code bases
+wait_for_pod "sensitive-keys-in-code-bases"
+kubectl port-forward --address=${BIND_ADDRESS} -n default deployment/sensitive-keys-in-code-bases 1230:3000 &
+
+# DIND (docker-in-docker) exploitation scenario
+wait_for_pod "dind-exploitation"  
+kubectl port-forward --address=${BIND_ADDRESS} -n default deployment/dind-exploitation 1231:1234 &
+
+# SSRF in Kubernetes scenario
+wait_for_pod "ssrf-in-kubernetes"
+kubectl port-forward --address=${BIND_ADDRESS} -n default deployment/ssrf-in-kubernetes 1232:3000 &
+
+# Container escape scenario
+wait_for_pod "container-escape"
+kubectl port-forward --address=${BIND_ADDRESS} -n default deployment/container-escape 1233:1234 &
+
+# Kubernetes Goat home page
+wait_for_pod "kubernetes-goat-home"
+kubectl port-forward --address=${BIND_ADDRESS} -n default deployment/kubernetes-goat-home 1234:1234 &
+
+# Private registry attack scenario
+wait_for_pod "poor-registry"
+kubectl port-forward --address=${BIND_ADDRESS} -n default deployment/poor-registry 1235:1234 &
+
+# DoS resources scenario
+wait_for_pod "system-monitor"
+kubectl port-forward --address=${BIND_ADDRESS} -n default deployment/system-monitor 1236:1234 &
+
+echo "All port forwards started. Kubernetes Goat is accessible on:"
+echo "  Main interface: http://$(hostname -I | awk '{print $1}'):1234"
+echo "  Scenario ports: 1230-1236"
+echo ""
+echo "Press Ctrl+C to stop all port forwards"
+
+# Wait for all background processes
+wait

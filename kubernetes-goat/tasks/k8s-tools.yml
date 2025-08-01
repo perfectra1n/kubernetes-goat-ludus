@@ -1,0 +1,84 @@
+---
+- name: Check if kubectl is already installed
+  stat:
+    path: /usr/local/bin/kubectl
+  register: kubectl_binary
+
+- name: Download kubectl binary
+  get_url:
+    url: "https://dl.k8s.io/release/v{{ kubectl_version }}/bin/linux/amd64/kubectl"
+    dest: /tmp/kubectl
+    mode: '0755'
+  when: not kubectl_binary.stat.exists
+  become: true
+
+- name: Install kubectl binary
+  copy:
+    src: /tmp/kubectl
+    dest: /usr/local/bin/kubectl
+    mode: '0755'
+    remote_src: yes
+  when: not kubectl_binary.stat.exists
+  become: true
+
+- name: Clean up kubectl download
+  file:
+    path: /tmp/kubectl
+    state: absent
+  when: not kubectl_binary.stat.exists
+  become: true
+
+- name: Check if helm is already installed
+  stat:
+    path: /usr/local/bin/helm
+  register: helm_binary
+
+- name: Download helm binary
+  get_url:
+    url: "https://get.helm.sh/helm-v{{ helm_version }}-linux-amd64.tar.gz"
+    dest: /tmp/helm.tar.gz
+  when: not helm_binary.stat.exists
+  become: true
+
+- name: Extract helm binary
+  unarchive:
+    src: /tmp/helm.tar.gz
+    dest: /tmp/
+    remote_src: yes
+  when: not helm_binary.stat.exists
+  become: true
+
+- name: Install helm binary
+  copy:
+    src: /tmp/linux-amd64/helm
+    dest: /usr/local/bin/helm
+    mode: '0755'
+    remote_src: yes
+  when: not helm_binary.stat.exists
+  become: true
+
+- name: Clean up helm downloads
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /tmp/helm.tar.gz
+    - /tmp/linux-amd64
+  when: not helm_binary.stat.exists
+  become: true
+
+- name: Verify kubectl installation
+  command: kubectl version --client
+  register: kubectl_version_output
+  changed_when: false
+
+- name: Verify helm installation
+  command: helm version
+  register: helm_version_output
+  changed_when: false
+
+- name: Display tool versions
+  debug:
+    msg:
+      - "kubectl installed: {{ kubectl_version_output.stdout }}"
+      - "helm installed: {{ helm_version_output.stdout }}"

@@ -1,0 +1,48 @@
+---
+- name: Create custom network access script
+  template:
+    src: access-kubernetes-goat-network.sh.j2
+    dest: "{{ kubernetes_goat_path }}/access-kubernetes-goat-network.sh"
+    mode: '0755'
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+  become: true
+
+- name: Create systemd service for Kubernetes Goat port forwarding
+  template:
+    src: kubernetes-goat-portforward.service.j2
+    dest: /etc/systemd/system/kubernetes-goat-portforward.service
+    mode: '0644'
+  become: true
+  notify: 
+    - reload systemd
+    - restart kubernetes-goat-portforward
+
+- name: Enable and start Kubernetes Goat port forwarding service
+  systemd:
+    name: kubernetes-goat-portforward
+    enabled: yes
+    state: started
+    daemon_reload: yes
+  become: true
+
+- name: Create firewall rules for Kubernetes Goat ports
+  ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  loop: "{{ kubernetes_goat_scenario_ports }}"
+  become: true
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Get server IP address
+  set_fact:
+    server_ip: "{{ hostvars[inventory_hostname]['ansible_default_ipv4']['address'] }}"
+
+- name: Display access information
+  debug:
+    msg:
+      - "Kubernetes Goat has been deployed and is accessible at:"
+      - "Main interface: http://{{ server_ip }}:{{ kubernetes_goat_main_port }}"
+      - "Scenario ports available: {{ kubernetes_goat_scenario_ports | join(', ') }}"
+      - "Service status: systemctl status kubernetes-goat-portforward"

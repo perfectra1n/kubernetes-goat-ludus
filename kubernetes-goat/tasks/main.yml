@@ -1,0 +1,38 @@
+---
+- name: Update apt cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  become: true
+
+- name: Install system dependencies
+  apt:
+    name:
+      - curl
+      - wget
+      - git
+      - apt-transport-https
+      - ca-certificates
+      - gnupg
+      - lsb-release
+      - unzip
+    state: present
+  become: true
+
+- name: Install Docker
+  include_tasks: docker.yml
+
+- name: Install KIND
+  include_tasks: kind.yml
+
+- name: Install kubectl and helm
+  include_tasks: k8s-tools.yml
+
+- name: Setup Kubernetes cluster with KIND
+  include_tasks: k8s-cluster.yml
+
+- name: Deploy Kubernetes Goat
+  include_tasks: kubernetes-goat.yml
+
+- name: Setup network exposure
+  include_tasks: network-exposure.yml

@@ -1,0 +1,39 @@
+# Example Ludus range configuration with Kubernetes Goat
+# yaml-language-server: $schema=https://docs.ludus.cloud/schemas/range-config.json
+
+ludus:
+  - vm_name: "{{ range_id }}-k8s-goat"
+    hostname: "{{ range_id }}-k8s-goat"
+    template: debian-12-x64-server-template
+    vlan: 20
+    ip_last_octet: 10
+    ram_gb: 8
+    cpus: 4
+    linux: true
+    testing:
+      snapshot: false
+      block_internet: false
+    roles:
+      - kubernetes-goat
+
+  - vm_name: "{{ range_id }}-attacker"
+    hostname: "{{ range_id }}-kali"
+    template: kali-x64-desktop-template
+    vlan: 20
+    ip_last_octet: 20
+    ram_gb: 4
+    cpus: 2
+    linux: true
+    testing:
+      snapshot: false
+      block_internet: false
+
+network:
+  inter_vlan_default: REJECT
+  rules:
+    - name: Allow attacker to access Kubernetes Goat
+      vlan_src: 20
+      vlan_dst: 20
+      protocol: tcp
+      ports: 1230:1236
+      action: ACCEPT

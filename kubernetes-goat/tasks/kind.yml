@@ -1,0 +1,38 @@
+---
+- name: Check if KIND is already installed
+  stat:
+    path: /usr/local/bin/kind
+  register: kind_binary
+
+- name: Download KIND binary
+  get_url:
+    url: "https://kind.sigs.k8s.io/dl/v{{ kind_version }}/kind-linux-amd64"
+    dest: /tmp/kind
+    mode: '0755'
+  when: not kind_binary.stat.exists
+  become: true
+
+- name: Install KIND binary
+  copy:
+    src: /tmp/kind
+    dest: /usr/local/bin/kind
+    mode: '0755'
+    remote_src: yes
+  when: not kind_binary.stat.exists
+  become: true
+
+- name: Clean up KIND download
+  file:
+    path: /tmp/kind
+    state: absent
+  when: not kind_binary.stat.exists
+  become: true
+
+- name: Verify KIND installation
+  command: kind version
+  register: kind_version_output
+  changed_when: false
+
+- name: Display KIND version
+  debug:
+    msg: "KIND installed: {{ kind_version_output.stdout }}"

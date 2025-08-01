@@ -1,0 +1,51 @@
+---
+- name: Clone Kubernetes Goat repository
+  git:
+    repo: "{{ kubernetes_goat_repo }}"
+    dest: "{{ kubernetes_goat_path }}"
+    version: "{{ kubernetes_goat_version }}"
+    force: yes
+  become: true
+
+- name: Set ownership of Kubernetes Goat directory
+  file:
+    path: "{{ kubernetes_goat_path }}"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    recurse: yes
+  become: true
+
+- name: Make setup script executable
+  file:
+    path: "{{ kubernetes_goat_path }}/setup-kubernetes-goat.sh"
+    mode: '0755'
+
+- name: Deploy Kubernetes Goat
+  shell: |
+    cd {{ kubernetes_goat_path }}
+    ./setup-kubernetes-goat.sh
+  environment:
+    KUBECONFIG: /root/.kube/config
+  register: goat_deployment
+  become: true
+
+- name: Wait for all pods to be ready
+  shell: kubectl get pods --all-namespaces --field-selector=status.phase!=Running,status.phase!=Succeeded
+  register: pending_pods
+  until: pending_pods.stdout_lines | length <= 1
+  retries: 60
+  delay: 10
+  changed_when: false
+  become: true
+
+- name: Get all pods status
+  command: kubectl get pods --all-namespaces
+  register: all_pods
+  changed_when: false
+  become: true
+
+- name: Display Kubernetes Goat deployment status
+  debug:
+    msg: 
+      - "Kubernetes Goat deployed successfully"
+      - "{{ all_pods.stdout_lines }}"

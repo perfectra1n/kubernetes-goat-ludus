@@ -1,0 +1,35 @@
+---
+# Kubernetes Goat configuration
+kubernetes_goat_version: "master"
+kubernetes_goat_repo: "https://github.com/madhuakula/kubernetes-goat.git"
+kubernetes_goat_path: "/opt/kubernetes-goat"
+
+# KIND configuration
+kind_version: "0.20.0"
+kind_cluster_name: "kubernetes-goat"
+
+# Network configuration
+kubernetes_goat_bind_address: "0.0.0.0"
+kubernetes_goat_main_port: 1234
+kubernetes_goat_scenario_ports:
+  - 1230
+  - 1231
+  - 1232
+  - 1233
+  - 1234
+  - 1235
+  - 1236
+
+# Docker configuration  
+docker_apt_repository: "deb [arch=amd64] https://download.docker.com/linux/{{ ansible_distribution | lower }} {{ ansible_distribution_release }} stable"
+docker_apt_key_url: "https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg"
+docker_packages:
+  - docker-ce
+  - docker-ce-cli
+  - containerd.io
+
+# kubectl configuration
+kubectl_version: "1.28.2"
+
+# helm configuration
+helm_version: "3.13.0"

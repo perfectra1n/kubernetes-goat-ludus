@@ -1,0 +1,17 @@
+[Unit]
+Description=Kubernetes Goat Port Forward Service
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory={{ kubernetes_goat_path }}
+Environment=KUBECONFIG=/root/.kube/config
+ExecStartPre=/bin/bash -c 'until kubectl get pods -l app=kubernetes-goat-home -o jsonpath="{.items[0].status.phase}" | grep -q Running; do sleep 5; done'
+ExecStart=/bin/bash {{ kubernetes_goat_path }}/access-kubernetes-goat-network.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

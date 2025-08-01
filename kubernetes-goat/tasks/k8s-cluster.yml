@@ -1,0 +1,51 @@
+---
+- name: Create KIND config directory
+  file:
+    path: /opt/kind
+    state: directory
+    mode: '0755'
+  become: true
+
+- name: Generate KIND cluster configuration
+  template:
+    src: kind-cluster.yaml.j2
+    dest: /opt/kind/cluster.yaml
+    mode: '0644'
+  become: true
+
+- name: Check if KIND cluster exists
+  command: kind get clusters
+  register: existing_clusters
+  changed_when: false
+  failed_when: false
+
+- name: Create KIND cluster
+  command: kind create cluster --name {{ kind_cluster_name }} --config /opt/kind/cluster.yaml
+  when: kind_cluster_name not in existing_clusters.stdout
+  register: cluster_creation
+  become: true
+
+- name: Wait for cluster to be ready
+  command: kubectl cluster-info --context kind-{{ kind_cluster_name }}
+  register: cluster_info
+  until: cluster_info.rc == 0
+  retries: 30
+  delay: 10
+  when: cluster_creation.changed
+
+- name: Set kubectl context
+  command: kubectl config set-context {{ kind_cluster_name }} --cluster=kind-{{ kind_cluster_name }} --user=kind-{{ kind_cluster_name }}
+  changed_when: false
+
+- name: Use the new context
+  command: kubectl config use-context kind-{{ kind_cluster_name }}
+  changed_when: false
+
+- name: Verify cluster is running
+  command: kubectl get nodes
+  register: cluster_nodes
+  changed_when: false
+
+- name: Display cluster status
+  debug:
+    msg: "Cluster nodes: {{ cluster_nodes.stdout_lines }}"
