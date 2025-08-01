@@ -37,17 +37,13 @@ kubernetes_goat_scenario_ports:
   - 1236
 ```
 
-## Dependencies
-
-None.
-
 ## Example Playbook
 
 ```yaml
 - hosts: kubernetes-goat-servers
   become: true
   roles:
-    - kubernetes-goat
+    - kubernetes-goat-ludus
 ```
 
 ## Using with Ludus
@@ -59,10 +55,9 @@ Add this role to your Ludus instance using the official Ludus command:
 ```bash
 # Clone this repository locally first
 git clone https://github.com/perfectra1n/kubernetes-goat-ludus
-cd kubernetes-goat-ludus
 
 # Add the role to Ludus (the --force flag updates if already exists)
-ludus ansible roles add -d ./kubernetes-goat --force
+ludus ansible roles add -d ./kubernetes-goat-ludus --force
 ```
 
 ### Step 2: Configure Your Range
@@ -90,7 +85,7 @@ ludus:
       snapshot: false
       block_internet: false  # Needs internet to download components
     roles:
-      - kubernetes-goat
+      - kubernetes-goat-ludus
 ```
 
 ### Step 3: Deploy Your Range
@@ -124,10 +119,10 @@ When developing or testing changes to this role:
 
 ```bash
 # 1. Update your local role code, then re-add to Ludus
-ludus ansible roles add -d ./kubernetes-goat --force
+ludus ansible roles add -d ./kubernetes-goat-ludus --force
 
 # 2. Deploy only this role to the specific VM
-ludus range deploy -t user-defined-roles --limit k8s-goat --only-roles kubernetes-goat
+ludus range deploy -t user-defined-roles --limit k8s-goat --only-roles kubernetes-goat-ludus
 
 # 3. Monitor deployment with logs
 ludus range logs -f
@@ -215,13 +210,6 @@ kind delete cluster --name kubernetes-goat
 ## License
 
 MIT
-
-## Contributing
-
-Found this role useful? Have improvements? Please consider sharing:
-- Email: info@badsectorlabs.com
-- X (Twitter): @badsectorlabs
-- Join the [Ludus Discord](https://discord.gg/ludus) community
 
 ## Author Information
 
