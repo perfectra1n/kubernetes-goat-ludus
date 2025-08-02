@@ -119,9 +119,9 @@ Once deployment completes, find your VM's IP address:
 ludus range list
 ```
 
-Then access Kubernetes Goat at: `http://VM_IP:1234`
+Then access Kubernetes Goat's main UI at: `http://VM_IP:1234`
 
-### Testing and Development
+### Testing and Development (and even Troubleshooting)
 
 When developing or testing changes to this role:
 
@@ -138,8 +138,6 @@ ludus range logs -f
 # 4. Check for any errors
 ludus range errors
 
-# 5. SSH to the VM for troubleshooting if needed
-ludus range ssh k8s-goat
 ```
 
 ### Available Ludus Variables
@@ -211,6 +209,17 @@ sudo journalctl -u kubernetes-goat-portforward -f
            action: ACCEPT
      ```
 
+4. **See if Ludus is unhappy**:
+```sh
+# Check the status of the current range deployment
+ludus range status
+
+# Get the logs from the currently deploying range
+ludus range logs
+
+# Get the errors (if there are any indicated by the `ludus range status` output)
+ludus range errors
+```
 ### Manual Commands
 
 ```bash
@@ -227,10 +236,6 @@ cd /opt/kubernetes-goat
 # Clean up cluster
 kind delete cluster --name kubernetes-goat
 ```
-
-## License
-
-MIT
 
 ## Author Information
 

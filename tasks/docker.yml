@@ -31,7 +31,6 @@
     groups: docker
     append: yes
   become: true
-  notify: reboot system
 
 - name: Verify Docker installation
   command: docker --version

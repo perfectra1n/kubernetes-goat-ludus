@@ -1,9 +1,4 @@
 ---
-- name: reboot system
-  reboot:
-    reboot_timeout: 300
-  become: true
-
 - name: reload systemd
   systemd:
     daemon_reload: yes
