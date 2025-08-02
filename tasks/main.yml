@@ -1,7 +1,4 @@
 ---
-- name: Setup SSH access for ansible user
-  include_tasks: setup-ssh-access.yml
-
 - name: Update apt cache
   apt:
     update_cache: yes
