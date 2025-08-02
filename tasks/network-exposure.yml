@@ -94,10 +94,28 @@
   set_fact:
     server_ip: "{{ hostvars[inventory_hostname]['ansible_default_ipv4']['address'] }}"
 
+- name: Display Kubernetes Goat deployment summary
+  debug:
+    msg: "{{ hostvars[inventory_hostname]['goat_deployment']['stdout_lines'] }}"
+  when: hostvars[inventory_hostname]['goat_deployment'] is defined and hostvars[inventory_hostname]['goat_deployment']['stdout_lines'] is defined
+
 - name: Display access information
   debug:
     msg:
-      - "Kubernetes Goat has been deployed and is accessible at:"
-      - "Main interface: http://{{ server_ip }}:{{ kubernetes_goat_main_port }}"
-      - "Scenario ports available: {{ kubernetes_goat_scenario_ports | join(', ') }}"
-      - "Service status: systemctl status kubernetes-goat-portforward"
+      - "================================================================"
+      - "🐐 KUBERNETES GOAT DEPLOYMENT COMPLETE! 🐐"
+      - "================================================================"
+      - "✅ Port forwarding service is running automatically"
+      - "✅ All scenarios are accessible over the network"
+      - ""
+      - "🌐 Access URLs:"
+      - "  Main interface: http://{{ server_ip }}:{{ kubernetes_goat_main_port }}"
+      - "  All scenario ports: {{ kubernetes_goat_scenario_ports | join(', ') }}"
+      - ""
+      - "🔧 Service management:"
+      - "  Check status: systemctl status kubernetes-goat-portforward"
+      - "  View logs: journalctl -u kubernetes-goat-portforward -f"
+      - "  Restart: systemctl restart kubernetes-goat-portforward"
+      - ""
+      - "📝 Note: No need to run access-kubernetes-goat.sh manually!"
+      - "================================================================"
