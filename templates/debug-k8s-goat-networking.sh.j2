@@ -1,0 +1,74 @@
+#!/bin/bash
+
+echo "=== Kubernetes Goat Network Debugging Script ==="
+echo "Running as user: $(whoami)"
+echo "Hostname: $(hostname)"
+echo "IP Address: $(hostname -I)"
+echo ""
+
+echo "=== 1. Checking Kubernetes cluster status ==="
+kubectl cluster-info
+echo ""
+
+echo "=== 2. Checking Kubernetes Goat pods ==="
+kubectl get pods -A | grep -E "(goat|scenario)"
+echo ""
+
+echo "=== 3. Checking Kubernetes services ==="
+kubectl get svc -A | grep -E "(goat|scenario)"
+echo ""
+
+echo "=== 4. Checking port forwarding processes ==="
+ps aux | grep -E "(kubectl port-forward|socat)" | grep -v grep
+echo ""
+
+echo "=== 5. Checking systemd service status ==="
+sudo systemctl status kubernetes-goat-portforward --no-pager
+echo ""
+
+echo "=== 6. Checking Docker containers ==="
+sudo docker ps | grep -E "(kind|goat)"
+echo ""
+
+echo "=== 7. Testing local connectivity to each port ==="
+for port in 1230 1231 1232 1233 1234 1235 1236; do
+    echo -n "Testing port $port: "
+    timeout 2 bash -c "echo >/dev/tcp/localhost/$port" && echo "OPEN" || echo "CLOSED/RESET"
+done
+echo ""
+
+echo "=== 8. Checking iptables rules ==="
+sudo iptables -L -n -v | grep -E "(1230|1231|1232|1233|1234|1235|1236)" || echo "No specific port rules found"
+echo ""
+
+echo "=== 9. Checking for any failed pods ==="
+kubectl get pods -A | grep -v Running | grep -v Completed
+echo ""
+
+echo "=== 10. Recent logs from port forwarding service ==="
+sudo journalctl -u kubernetes-goat-portforward --no-pager -n 50
+echo ""
+
+echo "=== 11. Checking KIND cluster nodes ==="
+kubectl get nodes -o wide
+echo ""
+
+echo "=== 12. Testing a specific scenario (port 1234) ==="
+echo "Attempting to get pod behind port 1234..."
+kubectl get pods -A -o wide | grep -E "(scenario-1|health-check)"
+echo ""
+
+echo "=== 13. Checking for network policies ==="
+kubectl get networkpolicies -A
+echo ""
+
+echo "=== 14. Docker network inspection ==="
+sudo docker network ls
+echo ""
+
+echo "=== Debugging complete ==="
+echo "If ports are showing as CLOSED/RESET, check:"
+echo "1. Are the pods running? (kubectl get pods -A)"
+echo "2. Are the port-forward commands active? (ps aux | grep port-forward)"
+echo "3. Is the systemd service running? (systemctl status kubernetes-goat-portforward)"
+echo "4. Are there any error logs? (journalctl -u kubernetes-goat-portforward)"

@@ -1,0 +1,38 @@
+---
+- name: Check current iptables rules
+  command: iptables -L -n -v
+  register: iptables_rules
+  become: true
+
+- name: Display iptables rules
+  debug:
+    msg:
+      - "=== CURRENT IPTABLES RULES ==="
+      - "{{ iptables_rules.stdout_lines }}"
+
+- name: Check for Docker's iptables rules
+  command: iptables -t nat -L -n -v
+  register: iptables_nat
+  become: true
+
+- name: Display NAT rules
+  debug:
+    msg:
+      - "=== NAT RULES (Docker port forwarding) ==="
+      - "{{ iptables_nat.stdout_lines }}"
+
+- name: Test if Docker is properly forwarding ports
+  shell: |
+    echo "Testing Docker port forwarding..."
+    for port in 1230 1231 1232 1233 1234 1235 1236; do
+      echo -n "Port $port: "
+      docker inspect $(docker ps -q -f publish=$port) 2>/dev/null | grep -E "(Name|IPAddress)" | head -4 || echo "No container publishing this port"
+    done
+  register: docker_port_check
+  become: true
+
+- name: Display Docker port forwarding info
+  debug:
+    msg:
+      - "=== DOCKER PORT FORWARDING ==="
+      - "{{ docker_port_check.stdout_lines }}"

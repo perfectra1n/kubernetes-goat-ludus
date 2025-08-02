@@ -1,0 +1,180 @@
+#!/bin/bash
+
+echo "=== Kubernetes Goat Full Diagnostics Script ==="
+echo "Running at: $(date)"
+echo "User: $(whoami)"
+echo "Hostname: $(hostname)"
+echo "IP Address: $(hostname -I)"
+echo ""
+
+# Function to test port connectivity
+test_port() {
+    local port=$1
+    local desc=$2
+    echo -n "  Port $port ($desc): "
+    
+    # Test with netcat
+    if timeout 2 nc -zv localhost $port 2>&1 | grep -q "succeeded\|connected"; then
+        echo "✓ Connected"
+        # Try to get HTTP response
+        echo -n "    HTTP Response: "
+        curl -s -o /dev/null -w "%{http_code}" --max-time 2 http://localhost:$port 2>/dev/null || echo "Not HTTP"
+    else
+        echo "✗ Connection failed"
+    fi
+}
+
+echo "=== 1. Checking KIND cluster status ==="
+kubectl cluster-info
+echo ""
+
+echo "=== 2. Checking all pods status ==="
+kubectl get pods -A -o wide
+echo ""
+
+echo "=== 3. Checking deployments ==="
+kubectl get deployments -A
+echo ""
+
+echo "=== 4. Testing kubectl port-forward manually ==="
+echo "Starting test port-forward for main interface..."
+timeout 10 kubectl port-forward deployment/kubernetes-goat-home-deployment 9999:1234 &
+PF_PID=$!
+sleep 3
+
+echo "Testing connection to forwarded port 9999..."
+if curl -s -o /dev/null -w "HTTP Status: %{http_code}\n" --max-time 5 http://localhost:9999; then
+    echo "✓ Manual port-forward works!"
+else
+    echo "✗ Manual port-forward failed"
+fi
+kill $PF_PID 2>/dev/null
+wait $PF_PID 2>/dev/null
+echo ""
+
+echo "=== 5. Checking existing port-forward processes ==="
+ps aux | grep -E "kubectl.*port-forward" | grep -v grep || echo "No kubectl port-forward processes found"
+echo ""
+
+echo "=== 6. Checking what's listening on the ports ==="
+sudo netstat -tlnp | grep -E ":(1230|1231|1232|1233|1234|1235|1236)" || echo "No processes listening on expected ports"
+echo ""
+
+echo "=== 7. Testing connectivity to each port ==="
+test_port 1230 "build-code"
+test_port 1231 "health-check"
+test_port 1232 "internal-proxy"
+test_port 1233 "hunger-check"
+test_port 1234 "main interface"
+test_port 1235 "poor-registry"
+test_port 1236 "system-monitor"
+echo ""
+
+echo "=== 8. Checking systemd service ==="
+sudo systemctl status kubernetes-goat-portforward --no-pager
+echo ""
+
+echo "=== 9. Checking service logs (last 50 lines) ==="
+sudo journalctl -u kubernetes-goat-portforward -n 50 --no-pager
+echo ""
+
+echo "=== 10. Checking port-forward script log ==="
+if [ -f /var/log/kubernetes-goat-portforward.log ]; then
+    echo "Last 50 lines of /var/log/kubernetes-goat-portforward.log:"
+    sudo tail -50 /var/log/kubernetes-goat-portforward.log
+else
+    echo "Log file not found at /var/log/kubernetes-goat-portforward.log"
+fi
+echo ""
+
+echo "=== 11. Testing pod connectivity directly ==="
+echo "Getting a pod to test internal connectivity..."
+POD=$(kubectl get pods -n default -l app=kubernetes-goat-home -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+if [ ! -z "$POD" ]; then
+    echo "Testing HTTP request inside pod $POD..."
+    kubectl exec -n default $POD -- wget -O- -T2 http://localhost:1234 2>&1 | head -20
+else
+    echo "Could not find kubernetes-goat-home pod"
+fi
+echo ""
+
+echo "=== 12. Checking Docker containers ==="
+sudo docker ps --format "table {{.Names}}\t{{.Ports}}" | grep -E "(1230|1231|1232|1233|1234|1235|1236)" || echo "No Docker containers with exposed ports found"
+echo ""
+
+echo "=== 13. Checking iptables rules ==="
+echo "Docker chain rules:"
+sudo iptables -L DOCKER -n -v | head -20
+echo ""
+echo "NAT rules for port forwarding:"
+sudo iptables -t nat -L DOCKER -n -v | grep -E "(1230|1231|1232|1233|1234|1235|1236)" || echo "No NAT rules for our ports"
+echo ""
+
+echo "=== 14. Checking KIND network ==="
+echo "Docker networks:"
+sudo docker network ls
+echo ""
+echo "KIND network details:"
+sudo docker network inspect kind 2>/dev/null | grep -A5 -B5 "kubernetes-goat" | head -30
+echo ""
+
+echo "=== 15. Running the access script manually ==="
+echo "Checking if script exists..."
+if [ -f /opt/kubernetes-goat/access-kubernetes-goat-network.sh ]; then
+    echo "Script found. Running it..."
+    sudo -u {{ ansible_user }} bash -x /opt/kubernetes-goat/access-kubernetes-goat-network.sh 2>&1 | head -100
+else
+    echo "Script not found at /opt/kubernetes-goat/access-kubernetes-goat-network.sh"
+fi
+echo ""
+
+echo "=== 16. Checking for port conflicts ==="
+echo "Checking if anything else is using our ports..."
+for port in 1230 1231 1232 1233 1234 1235 1236; do
+    echo -n "Port $port: "
+    sudo lsof -i :$port 2>/dev/null | grep LISTEN | awk '{print $1, $2, $3}' || echo "Nothing found"
+done
+echo ""
+
+echo "=== 17. Testing service endpoints ==="
+echo "Checking service endpoints in Kubernetes..."
+kubectl get endpoints -A | grep -E "(goat|build|health|proxy|hunger|registry|monitor)" || echo "No matching endpoints found"
+echo ""
+
+echo "=== 18. Pod logs for failing services ==="
+echo "Checking logs for kubernetes-goat-home pod..."
+kubectl logs -n default deployment/kubernetes-goat-home-deployment --tail=20 2>&1
+echo ""
+
+echo "=== 19. DNS resolution test ==="
+echo "Testing DNS inside cluster..."
+kubectl run -it --rm debug --image=busybox --restart=Never -- nslookup kubernetes.default 2>&1
+echo ""
+
+echo "=== 20. Summary and Recommendations ==="
+echo "Based on the diagnostics above:"
+echo ""
+
+# Check if pods are running
+if kubectl get pods -A | grep -q "kubernetes-goat-home.*Running"; then
+    echo "✓ Pods are running"
+else
+    echo "✗ Pods are NOT running properly"
+fi
+
+# Check if port-forwards exist
+if ps aux | grep -q "[k]ubectl.*port-forward"; then
+    echo "✓ Port-forward processes exist"
+else
+    echo "✗ No port-forward processes found"
+fi
+
+# Check if systemd service is active
+if sudo systemctl is-active kubernetes-goat-portforward >/dev/null 2>&1; then
+    echo "✓ Systemd service is active"
+else
+    echo "✗ Systemd service is NOT active"
+fi
+
+echo ""
+echo "=== Diagnostics complete ==="

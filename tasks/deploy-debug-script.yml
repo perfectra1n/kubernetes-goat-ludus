@@ -1,0 +1,21 @@
+---
+- name: Deploy network debugging script
+  template:
+    src: debug-k8s-goat-networking.sh.j2
+    dest: /home/{{ ansible_user }}/debug-k8s-goat-networking.sh
+    mode: '0755'
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+  become: true
+
+- name: Display debugging instructions
+  debug:
+    msg:
+      - "Network debugging script deployed!"
+      - "To debug the port forwarding issues, SSH into the machine and run:"
+      - "  ./debug-k8s-goat-networking.sh"
+      - ""
+      - "Based on Ludus networking docs, also check:"
+      - "  - Machine IP: Should be in 10.X.X.X range"
+      - "  - No firewall rules blocking the ports"
+      - "  - Services bound to 0.0.0.0 (not just 127.0.0.1)"

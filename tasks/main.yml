@@ -1,4 +1,7 @@
 ---
+- name: Setup SSH access for ansible user
+  include_tasks: setup-ssh-access.yml
+
 - name: Update apt cache
   apt:
     update_cache: yes
@@ -36,3 +39,9 @@
 
 - name: Setup network exposure
   include_tasks: network-exposure.yml
+
+- name: Check firewall and Docker networking
+  include_tasks: add-firewall-check.yml
+
+- name: Deploy debugging script
+  include_tasks: deploy-debug-script.yml

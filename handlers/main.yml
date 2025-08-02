@@ -14,3 +14,9 @@
     name: kubernetes-goat-portforward
     state: restarted
   become: true
+
+- name: restart ssh
+  service:
+    name: ssh
+    state: restarted
+  become: true

@@ -1,156 +1,95 @@
 #!/bin/bash
 
-# Custom access script for Kubernetes Goat with network binding
-# This script exposes services to the network instead of just localhost
+echo "Setting up Kubernetes Goat network access..."
 
-BIND_ADDRESS="{{ kubernetes_goat_bind_address }}"
-LOG_FILE="/var/log/kubernetes-goat-portforward.log"
-KUBECTL="/usr/local/bin/kubectl --context kind-{{ kind_cluster_name }}"
-export KUBECONFIG="/home/{{ ansible_user }}/.kube/config"
-
-# Logging function
-log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
+# Function to get pod name by label
+get_pod_name() {
+    local label=$1
+    local namespace=${2:-default}
+    kubectl get pods -n $namespace -l $label -o jsonpath='{.items[0].metadata.name}' 2>/dev/null
 }
 
-log "Starting Kubernetes Goat network access on ${BIND_ADDRESS}"
-log "Using kubectl at: $KUBECTL"
-
-# Function to check if pod is running
+# Function to wait for pod to be ready
 wait_for_pod() {
-    local app_label=$1
-    local timeout=300
-    local count=0
-    
-    log "Waiting for pod with label app=${app_label} to be ready..."
-    while [ $count -lt $timeout ]; do
-        if $KUBECTL get pods -l app=${app_label} -o jsonpath='{.items[0].status.phase}' 2>/dev/null | grep -q "Running"; then
-            log "Pod ${app_label} is ready"
-            return 0
-        fi
-        sleep 5
-        count=$((count + 5))
-    done
-    log "ERROR: Timeout waiting for pod ${app_label}"
-    return 1
+    local pod_name=$1
+    local namespace=${2:-default}
+    echo "Waiting for pod $pod_name to be ready..."
+    kubectl wait --for=condition=ready pod/$pod_name -n $namespace --timeout=300s
 }
 
-# Function to start port forward with logging
+# Function to start port forward
 start_port_forward() {
-    local app_label=$1
+    local pod_name=$1
     local local_port=$2
     local remote_port=$3
-    local deployment=$4
-    local namespace=${5:-default}
+    local namespace=${4:-default}
     
-    log "Starting port forward for ${app_label}: ${local_port} -> ${remote_port} (namespace: ${namespace})"
-    
-    # Check if port is already in use
-    if netstat -tuln | grep -q ":${local_port} "; then
-        log "WARNING: Port ${local_port} is already in use"
-        return 1
-    fi
-    
-    # Start port forward with nohup to survive script exit
-    nohup $KUBECTL port-forward --address=${BIND_ADDRESS} -n ${namespace} deployment/${deployment} ${local_port}:${remote_port} >> "$LOG_FILE" 2>&1 &
-    local pid=$!
-    
-    # Give it a moment to start
-    sleep 2
-    
-    # Check if the process is still running
-    if kill -0 $pid 2>/dev/null; then
-        log "Port forward for ${app_label} started successfully (PID: $pid)"
-        echo $pid >> /var/run/kubernetes-goat-pids.txt
-        return 0
+    if [ ! -z "$pod_name" ]; then
+        echo "Starting port forward: localhost:$local_port -> $pod_name:$remote_port"
+        kubectl port-forward $pod_name --address {{ kubernetes_goat_bind_address }} -n $namespace $local_port:$remote_port > /dev/null 2>&1 &
+        sleep 2
     else
-        log "ERROR: Port forward for ${app_label} failed to start"
-        return 1
+        echo "Warning: Could not find pod for port $local_port"
     fi
 }
 
-# Clean up any existing PID file
-rm -f /var/run/kubernetes-goat-pids.txt
+echo "Finding and setting up port forwards..."
 
-# Start port forwarding for each service
-log "Setting up port forwarding..."
+# Port 1230 - Build code (sensitive keys)
+POD_NAME=$(get_pod_name "app=build-code")
+if [ ! -z "$POD_NAME" ]; then
+    wait_for_pod $POD_NAME
+    start_port_forward $POD_NAME 1230 3000
+fi
 
-# First, let's see what deployments actually exist
-log "Discovering available deployments..."
-$KUBECTL get deployments --all-namespaces --no-headers 2>/dev/null | while read namespace name ready uptodate available age; do
-    log "Found deployment: $name in namespace: $namespace"
-done
+# Port 1231 - Health check (DIND)
+POD_NAME=$(get_pod_name "app=health-check")
+if [ ! -z "$POD_NAME" ]; then
+    wait_for_pod $POD_NAME
+    start_port_forward $POD_NAME 1231 80
+fi
 
-# Try multiple possible deployment names for each port
-# Port 1230 - Sensitive keys scenario
-for deployment in "build-code" "sensitive-keys-in-code-bases" "build-code-deployment"; do
-    if $KUBECTL get deployment "$deployment" -n default >/dev/null 2>&1; then
-        log "Found deployment for port 1230: $deployment"
-        start_port_forward "$deployment" 1230 3000 "$deployment"
-        break
-    fi
-done
+# Port 1232 - Internal proxy (SSRF)
+POD_NAME=$(get_pod_name "app=internal-proxy")
+if [ ! -z "$POD_NAME" ]; then
+    wait_for_pod $POD_NAME
+    start_port_forward $POD_NAME 1232 3000
+fi
 
-# Port 1231 - DIND scenario  
-for deployment in "health-check" "dind-exploitation" "health-check-deployment"; do
-    if $KUBECTL get deployment "$deployment" -n default >/dev/null 2>&1; then
-        log "Found deployment for port 1231: $deployment"
-        start_port_forward "$deployment" 1231 1234 "$deployment"
-        break
-    fi
-done
+# Port 1233 - Hunger check (container escape) - in big-monolith namespace
+POD_NAME=$(get_pod_name "app=hunger-check" "big-monolith")
+if [ ! -z "$POD_NAME" ]; then
+    wait_for_pod $POD_NAME "big-monolith"
+    start_port_forward $POD_NAME 1233 8080 "big-monolith"
+fi
 
-# Port 1232 - SSRF scenario
-for deployment in "internal-proxy" "ssrf-in-kubernetes" "internal-proxy-deployment"; do
-    if $KUBECTL get deployment "$deployment" -n default >/dev/null 2>&1; then
-        log "Found deployment for port 1232: $deployment"
-        start_port_forward "$deployment" 1232 3000 "$deployment"
-        break
-    fi
-done
+# Port 1234 - Kubernetes Goat home
+POD_NAME=$(get_pod_name "app=kubernetes-goat-home")
+if [ ! -z "$POD_NAME" ]; then
+    wait_for_pod $POD_NAME
+    start_port_forward $POD_NAME 1234 80
+fi
 
-# Port 1233 - Container escape (try both default and big-monolith namespaces)
-for namespace in "big-monolith" "default"; do
-    for deployment in "hunger-check" "container-escape" "hunger-check-deployment"; do
-        if $KUBECTL get deployment "$deployment" -n "$namespace" >/dev/null 2>&1; then
-            log "Found deployment for port 1233: $deployment in namespace: $namespace"
-            start_port_forward "$deployment" 1233 1234 "$deployment" "$namespace"
-            break 2
-        fi
-    done
-done
+# Port 1235 - Poor registry
+POD_NAME=$(get_pod_name "app=poor-registry")
+if [ ! -z "$POD_NAME" ]; then
+    wait_for_pod $POD_NAME
+    start_port_forward $POD_NAME 1235 5000
+fi
 
-# Port 1234 - Main interface
-for deployment in "kubernetes-goat-home" "kubernetes-goat-home-deployment" "goat-home"; do
-    if $KUBECTL get deployment "$deployment" -n default >/dev/null 2>&1; then
-        log "Found deployment for port 1234: $deployment"
-        start_port_forward "$deployment" 1234 1234 "$deployment"
-        break
-    fi
-done
+# Port 1236 - System monitor (DoS)
+POD_NAME=$(get_pod_name "app=system-monitor")
+if [ ! -z "$POD_NAME" ]; then
+    wait_for_pod $POD_NAME
+    start_port_forward $POD_NAME 1236 8080
+fi
 
-# Port 1235 - Registry scenario
-for deployment in "poor-registry" "private-registry" "poor-registry-deployment"; do
-    if $KUBECTL get deployment "$deployment" -n default >/dev/null 2>&1; then
-        log "Found deployment for port 1235: $deployment"
-        start_port_forward "$deployment" 1235 1234 "$deployment"
-        break
-    fi
-done
+echo "Port forwarding setup complete!"
+echo "Kubernetes Goat is accessible on:"
+echo "  Main interface: http://$(hostname -I | awk '{print $1}'):1234"
+echo "  Scenario ports: 1230-1236"
 
-# Port 1236 - DoS scenario
-for deployment in "system-monitor" "dos-resources" "system-monitor-deployment"; do
-    if $KUBECTL get deployment "$deployment" -n default >/dev/null 2>&1; then
-        log "Found deployment for port 1236: $deployment"
-        start_port_forward "$deployment" 1236 1234 "$deployment"
-        break
-    fi
-done
+# Give background processes time to establish connections
+sleep 5
 
-log "Port forwarding setup complete"
-log "Kubernetes Goat is accessible on:"
-log "  Main interface: http://$(hostname -I | awk '{print $1}'):1234"
-log "  Scenario ports: 1230-1236"
-
-# For systemd forking service, we need to exit after starting the background processes
-exit 0
+echo "Setup finished. Port forward processes are running in background."

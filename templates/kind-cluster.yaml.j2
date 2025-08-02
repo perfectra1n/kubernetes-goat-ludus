@@ -5,9 +5,3 @@ nodes:
   extraMounts:
   - hostPath: /var/run/docker.sock
     containerPath: /var/run/docker.sock
-  extraPortMappings:
-{% for port in kubernetes_goat_scenario_ports %}
-  - containerPort: {{ port }}
-    hostPort: {{ port }}
-    protocol: TCP
-{% endfor %}
