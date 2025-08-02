@@ -26,6 +26,24 @@
     daemon_reload: yes
   become: true
 
+- name: Wait for port forwarding service to be active
+  systemd:
+    name: kubernetes-goat-portforward
+  register: service_status
+  until: service_status.status.ActiveState == "active"
+  retries: 30
+  delay: 5
+  become: true
+
+- name: Wait for ports to be listening
+  wait_for:
+    port: "{{ item }}"
+    host: "{{ kubernetes_goat_bind_address }}"
+    timeout: 300
+    delay: 10
+  loop: "{{ kubernetes_goat_scenario_ports }}"
+  become: true
+
 # Install ufw if not present
 - name: Install ufw
   apt:

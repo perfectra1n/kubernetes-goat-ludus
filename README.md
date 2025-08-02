@@ -48,9 +48,9 @@ kubernetes_goat_scenario_ports:
 
 ## Using with Ludus
 
-### Important: Ludus Networking Requirements
+### Access Information
 
-Kubernetes Goat requires specific network rules to access its services (ports 1230-1236). By default, Ludus only allows SSH (port 22) access to VMs. The role automatically configures firewall rules on the VM itself, but you must also configure Ludus network rules to allow traffic through the Ludus router.
+Services will be accessible via WireGuard by default. If accessing from other VMs within the range, additional network rules may be required (see troubleshooting section).
 
 ### Step 1: Install the Role
 
@@ -73,7 +73,7 @@ Get your current range configuration and add the Kubernetes Goat VM:
 ludus range config get > config.yml
 ```
 
-Edit your `config.yml` to include a VM with the kubernetes-goat role **and the required network rules**:
+Edit your `config.yml` to include a VM with the kubernetes-goat role:
 
 ```yaml
 ludus:
@@ -90,24 +90,11 @@ ludus:
       block_internet: false  # Needs internet to download components
     roles:
       - kubernetes-goat-ludus
-
-# IMPORTANT: Network rules are required to access Kubernetes Goat services
-# Without these rules, only SSH (port 22) will be accessible
-network:
-  inter_vlan_default: REJECT
-  rules:
-    - name: Allow access to Kubernetes Goat services
-      vlan_src: 20  # Adjust source VLAN as needed
-      vlan_dst: 20
-      protocol: tcp
-      ports: 1230:1236
-      action: ACCEPT
 ```
 
-**Network Configuration Notes:**
-- `vlan_src: 20` allows access from VLAN 20 (same as target VM). Adjust this based on where you'll be accessing from
-- If accessing from an attacker VM on a different VLAN, change `vlan_src` to match that VLAN
-- For access from the Ludus host or external networks, consult the [Ludus networking documentation](https://docs.ludus.cloud/docs/networking/)
+**Network Access Notes:**
+- Access via WireGuard (from your local machine) works by default
+- If accessing from other VMs in the range, you may need network rules - see troubleshooting section
 
 ### Step 3: Deploy Your Range
 
@@ -209,11 +196,20 @@ sudo journalctl -u kubernetes-goat-portforward -f
 
 1. **Pods not starting**: Check if Docker service is running and user is in docker group
 2. **Port forwarding fails**: Ensure all pods are in Running state before starting the service
-3. **Network access issues**: This is usually a Ludus network rules problem, not a VM firewall issue
-   - **Symptom**: Only SSH (port 22) is accessible via nmap/port scanning
-   - **Cause**: Missing network rules in your Ludus range configuration
-   - **Solution**: Ensure your `config.yml` includes the network rules section shown in Step 2
-   - **Note**: The role automatically configures VM-level firewall rules; the blocking occurs at the Ludus router level
+3. **Network access issues**: 
+   - **If accessing via WireGuard**: Services should be accessible by default. Check if services are running with `systemctl status kubernetes-goat-portforward`
+   - **If accessing from other VMs in range**: You may need network rules in your `config.yml`:
+     ```yaml
+     network:
+       inter_vlan_default: REJECT
+       rules:
+         - name: Allow access to Kubernetes Goat
+           vlan_src: 10  # Source VLAN (adjust as needed)
+           vlan_dst: 20  # Kubernetes Goat VLAN
+           protocol: tcp
+           ports: 1230:1236
+           action: ACCEPT
+     ```
 
 ### Manual Commands
 
