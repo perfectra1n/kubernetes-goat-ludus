@@ -4,15 +4,15 @@ After=docker.service
 Wants=docker.service
 
 [Service]
-Type=forking
+Type=oneshot
+RemainAfterExit=yes
 User=root
 WorkingDirectory={{ kubernetes_goat_path }}
 Environment=KUBECONFIG=/root/.kube/config
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
 ExecStartPre=/bin/bash -c 'until /usr/local/bin/kubectl get pods -l app=kubernetes-goat-home -o jsonpath="{.items[0].status.phase}" | grep -q Running; do sleep 5; done'
 ExecStart=/bin/bash {{ kubernetes_goat_path }}/access-kubernetes-goat-network.sh
-Restart=always
-RestartSec=10
+ExecStop=/bin/bash -c 'if [ -f /var/run/kubernetes-goat-pids.txt ]; then while read pid; do kill $pid 2>/dev/null || true; done < /var/run/kubernetes-goat-pids.txt; rm -f /var/run/kubernetes-goat-pids.txt; fi'
 StandardOutput=append:/var/log/kubernetes-goat-portforward.log
 StandardError=append:/var/log/kubernetes-goat-portforward.log
 

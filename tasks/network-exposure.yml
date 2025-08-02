@@ -57,6 +57,13 @@
     - reload systemd
     - restart kubernetes-goat-portforward
 
+- name: Stop existing service if running
+  systemd:
+    name: kubernetes-goat-portforward
+    state: stopped
+  become: true
+  failed_when: false
+
 - name: Enable and start Kubernetes Goat port forwarding service
   systemd:
     name: kubernetes-goat-portforward
