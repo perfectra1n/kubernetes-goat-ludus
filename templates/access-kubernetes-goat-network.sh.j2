@@ -4,8 +4,16 @@
 # This script exposes services to the network instead of just localhost
 
 BIND_ADDRESS="{{ kubernetes_goat_bind_address }}"
+LOG_FILE="/var/log/kubernetes-goat-portforward.log"
+KUBECTL="/usr/local/bin/kubectl"
 
-echo "Starting Kubernetes Goat network access on ${BIND_ADDRESS}"
+# Logging function
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
+}
+
+log "Starting Kubernetes Goat network access on ${BIND_ADDRESS}"
+log "Using kubectl at: $KUBECTL"
 
 # Function to check if pod is running
 wait_for_pod() {
@@ -13,55 +21,97 @@ wait_for_pod() {
     local timeout=300
     local count=0
     
-    echo "Waiting for pod with label app=${app_label} to be ready..."
+    log "Waiting for pod with label app=${app_label} to be ready..."
     while [ $count -lt $timeout ]; do
-        if kubectl get pods -l app=${app_label} -o jsonpath='{.items[0].status.phase}' 2>/dev/null | grep -q "Running"; then
-            echo "Pod ${app_label} is ready"
+        if $KUBECTL get pods -l app=${app_label} -o jsonpath='{.items[0].status.phase}' 2>/dev/null | grep -q "Running"; then
+            log "Pod ${app_label} is ready"
             return 0
         fi
         sleep 5
         count=$((count + 5))
     done
-    echo "Timeout waiting for pod ${app_label}"
+    log "ERROR: Timeout waiting for pod ${app_label}"
     return 1
 }
 
+# Function to start port forward with logging
+start_port_forward() {
+    local app_label=$1
+    local local_port=$2
+    local remote_port=$3
+    local deployment=$4
+    
+    log "Starting port forward for ${app_label}: ${local_port} -> ${remote_port}"
+    
+    # Check if port is already in use
+    if netstat -tuln | grep -q ":${local_port} "; then
+        log "WARNING: Port ${local_port} is already in use"
+        return 1
+    fi
+    
+    # Start port forward with nohup to survive script exit
+    nohup $KUBECTL port-forward --address=${BIND_ADDRESS} -n default deployment/${deployment} ${local_port}:${remote_port} >> "$LOG_FILE" 2>&1 &
+    local pid=$!
+    
+    # Give it a moment to start
+    sleep 2
+    
+    # Check if the process is still running
+    if kill -0 $pid 2>/dev/null; then
+        log "Port forward for ${app_label} started successfully (PID: $pid)"
+        echo $pid >> /var/run/kubernetes-goat-pids.txt
+        return 0
+    else
+        log "ERROR: Port forward for ${app_label} failed to start"
+        return 1
+    fi
+}
+
+# Clean up any existing PID file
+rm -f /var/run/kubernetes-goat-pids.txt
+
 # Start port forwarding for each service
-echo "Setting up port forwarding..."
+log "Setting up port forwarding..."
 
 # Sensitive keys in code bases
-wait_for_pod "sensitive-keys-in-code-bases"
-kubectl port-forward --address=${BIND_ADDRESS} -n default deployment/sensitive-keys-in-code-bases 1230:3000 &
+if wait_for_pod "sensitive-keys-in-code-bases"; then
+    start_port_forward "sensitive-keys-in-code-bases" 1230 3000 "sensitive-keys-in-code-bases"
+fi
 
 # DIND (docker-in-docker) exploitation scenario
-wait_for_pod "dind-exploitation"  
-kubectl port-forward --address=${BIND_ADDRESS} -n default deployment/dind-exploitation 1231:1234 &
+if wait_for_pod "dind-exploitation"; then
+    start_port_forward "dind-exploitation" 1231 1234 "dind-exploitation"
+fi
 
 # SSRF in Kubernetes scenario
-wait_for_pod "ssrf-in-kubernetes"
-kubectl port-forward --address=${BIND_ADDRESS} -n default deployment/ssrf-in-kubernetes 1232:3000 &
+if wait_for_pod "ssrf-in-kubernetes"; then
+    start_port_forward "ssrf-in-kubernetes" 1232 3000 "ssrf-in-kubernetes"
+fi
 
 # Container escape scenario
-wait_for_pod "container-escape"
-kubectl port-forward --address=${BIND_ADDRESS} -n default deployment/container-escape 1233:1234 &
+if wait_for_pod "container-escape"; then
+    start_port_forward "container-escape" 1233 1234 "container-escape"
+fi
 
 # Kubernetes Goat home page
-wait_for_pod "kubernetes-goat-home"
-kubectl port-forward --address=${BIND_ADDRESS} -n default deployment/kubernetes-goat-home 1234:1234 &
+if wait_for_pod "kubernetes-goat-home"; then
+    start_port_forward "kubernetes-goat-home" 1234 1234 "kubernetes-goat-home-deployment"
+fi
 
 # Private registry attack scenario
-wait_for_pod "poor-registry"
-kubectl port-forward --address=${BIND_ADDRESS} -n default deployment/poor-registry 1235:1234 &
+if wait_for_pod "poor-registry"; then
+    start_port_forward "poor-registry" 1235 1234 "poor-registry"
+fi
 
 # DoS resources scenario
-wait_for_pod "system-monitor"
-kubectl port-forward --address=${BIND_ADDRESS} -n default deployment/system-monitor 1236:1234 &
+if wait_for_pod "system-monitor"; then
+    start_port_forward "system-monitor" 1236 1234 "system-monitor"
+fi
 
-echo "All port forwards started. Kubernetes Goat is accessible on:"
-echo "  Main interface: http://$(hostname -I | awk '{print $1}'):1234"
-echo "  Scenario ports: 1230-1236"
-echo ""
-echo "Press Ctrl+C to stop all port forwards"
+log "Port forwarding setup complete"
+log "Kubernetes Goat is accessible on:"
+log "  Main interface: http://$(hostname -I | awk '{print $1}'):1234"
+log "  Scenario ports: 1230-1236"
 
-# Wait for all background processes
-wait
+# For systemd forking service, we need to exit after starting the background processes
+exit 0

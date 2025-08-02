@@ -1,4 +1,43 @@
 ---
+# Pre-deployment checks
+- name: Verify kubectl is installed and accessible
+  command: /usr/local/bin/kubectl version --client
+  register: kubectl_version_check
+  failed_when: false
+  become: true
+
+- name: Display kubectl status
+  debug:
+    msg:
+      - "=== PRE-DEPLOYMENT CHECKS ==="
+      - "kubectl version: {{ kubectl_version_check.stdout | default('kubectl not found or not accessible') }}"
+
+- name: Check if KIND cluster is running
+  command: /usr/local/bin/kubectl cluster-info
+  register: cluster_info
+  environment:
+    KUBECONFIG: /root/.kube/config
+  become: true
+  failed_when: false
+
+- name: Display cluster status
+  debug:
+    msg:
+      - "=== CLUSTER STATUS ==="
+      - "{{ cluster_info.stdout_lines | default(['Cluster not accessible']) }}"
+
+- name: Check if any processes are already using our ports
+  shell: "netstat -tuln | grep -E ':({{ kubernetes_goat_scenario_ports | join('|') }})'"
+  register: port_conflicts
+  failed_when: false
+  become: true
+
+- name: Display port conflicts if any
+  debug:
+    msg:
+      - "=== PORT CONFLICTS CHECK ==="
+      - "{{ port_conflicts.stdout_lines | default(['No port conflicts found']) }}"
+
 - name: Create custom network access script
   template:
     src: access-kubernetes-goat-network.sh.j2
@@ -35,16 +74,49 @@
   delay: 5
   become: true
 
-- name: Check service logs if not active
-  command: journalctl -u kubernetes-goat-portforward --no-pager -n 20
+- name: Get detailed service status
+  command: systemctl status kubernetes-goat-portforward -l --no-pager
+  register: service_detailed_status
+  become: true
+  failed_when: false
+
+- name: Display detailed service status
+  debug:
+    msg: 
+      - "=== SERVICE STATUS ==="
+      - "{{ service_detailed_status.stdout_lines }}"
+
+- name: Get last 50 lines of service logs
+  command: journalctl -u kubernetes-goat-portforward -n 50 --no-pager
   register: service_logs
-  when: service_status.status.ActiveState != "active"
+  become: true
+  failed_when: false
+
+- name: Display service logs
+  debug:
+    msg:
+      - "=== SERVICE LOGS ==="
+      - "{{ service_logs.stdout_lines }}"
+
+- name: Check if log file exists
+  stat:
+    path: /var/log/kubernetes-goat-portforward.log
+  register: log_file_stat
   become: true
 
-- name: Display service logs if service failed
+- name: Display log file contents if exists
+  command: tail -50 /var/log/kubernetes-goat-portforward.log
+  register: log_file_contents
+  become: true
+  failed_when: false
+  when: log_file_stat.stat.exists
+
+- name: Show log file contents
   debug:
-    msg: "Service logs: {{ service_logs.stdout_lines }}"
-  when: service_status.status.ActiveState != "active" and service_logs is defined
+    msg:
+      - "=== LOG FILE CONTENTS ==="
+      - "{{ log_file_contents.stdout_lines | default(['Log file not found or empty']) }}"
+  when: log_file_stat.stat.exists
 
 - name: Wait for ports to be listening
   wait_for:
@@ -56,27 +128,90 @@
   register: port_check
   become: true
 
+- name: Check if kubectl port-forward processes are running
+  shell: ps aux | grep -E 'kubectl.*port-forward' | grep -v grep
+  register: kubectl_processes
+  failed_when: false
+  become: true
+
+- name: Display kubectl port-forward processes
+  debug:
+    msg:
+      - "=== KUBECTL PORT-FORWARD PROCESSES ==="
+      - "{{ kubectl_processes.stdout_lines | default(['No kubectl port-forward processes found']) }}"
+
+- name: Check all listening ports on the system
+  command: ss -tlnp
+  register: listening_ports
+  become: true
+  failed_when: false
+
+- name: Check specific Kubernetes Goat ports
+  shell: "ss -tlnp | grep -E ':({{ kubernetes_goat_scenario_ports | join('|') }})'"
+  register: goat_ports
+  failed_when: false
+  become: true
+
+- name: Display Kubernetes Goat port status
+  debug:
+    msg:
+      - "=== KUBERNETES GOAT PORT STATUS ==="
+      - "{{ goat_ports.stdout_lines | default(['No Kubernetes Goat ports found listening']) }}"
+
+- name: Test local connectivity to each port
+  wait_for:
+    port: "{{ item }}"
+    host: 127.0.0.1
+    timeout: 5
+  loop: "{{ kubernetes_goat_scenario_ports }}"
+  register: local_port_test
+  failed_when: false
+
+- name: Display local connectivity results
+  debug:
+    msg: "Port {{ item.item }}: {{ 'OPEN' if item.state is defined and item.state == 'started' else 'CLOSED' }}"
+  loop: "{{ local_port_test.results }}"
+
+- name: Check Kubernetes Goat pod status
+  command: /usr/local/bin/kubectl get pods --all-namespaces -o wide
+  register: pod_status
+  environment:
+    KUBECONFIG: /root/.kube/config
+  become: true
+  failed_when: false
+
+- name: Display pod status
+  debug:
+    msg:
+      - "=== KUBERNETES POD STATUS ==="
+      - "{{ pod_status.stdout_lines | default(['Could not get pod status']) }}"
+
+- name: Check if PID file exists
+  stat:
+    path: /var/run/kubernetes-goat-pids.txt
+  register: pid_file_stat
+  become: true
+
+- name: Show running PIDs if file exists
+  command: cat /var/run/kubernetes-goat-pids.txt
+  register: running_pids
+  become: true
+  failed_when: false
+  when: pid_file_stat.stat.exists
+
+- name: Display running process PIDs
+  debug:
+    msg:
+      - "=== PROCESS PIDS ==="
+      - "{{ running_pids.stdout_lines | default(['PID file not found']) }}"
+  when: pid_file_stat.stat.exists
+
 - name: Display port check success
   debug:
     msg: "✅ All Kubernetes Goat ports ({{ kubernetes_goat_scenario_ports | join(', ') }}) are listening successfully!"
   when: port_check is defined and port_check.results | selectattr('failed', 'defined') | selectattr('failed') | list | length == 0
 
-# Install ufw if not present
-- name: Install ufw
-  apt:
-    name: ufw
-    state: present
-  become: true
-  when: ansible_facts['os_family'] == "Debian"
-
-- name: Create firewall rules for Kubernetes Goat ports
-  ufw:
-    rule: allow
-    port: "{{ item }}"
-    proto: tcp
-  loop: "{{ kubernetes_goat_scenario_ports }}"
-  become: true
-  when: ansible_facts['os_family'] == "Debian"
+# Note: UFW is not needed on Ludus VMs - firewall rules are managed at the router level
 
 - name: Get server IP address
   set_fact:
@@ -87,23 +222,47 @@
     msg: "{{ hostvars[inventory_hostname]['goat_deployment']['stdout_lines'] }}"
   when: hostvars[inventory_hostname]['goat_deployment'] is defined and hostvars[inventory_hostname]['goat_deployment']['stdout_lines'] is defined and hostvars[inventory_hostname]['goat_status']['stdout'] != 'deployed'
 
-- name: Display access information
+- name: Count successful port connections
+  set_fact:
+    successful_ports: "{{ local_port_test.results | selectattr('state', 'defined') | selectattr('state', 'equalto', 'started') | list | length }}"
+    total_ports: "{{ kubernetes_goat_scenario_ports | length }}"
+
+- name: Display deployment summary with debug info
   debug:
     msg:
       - "================================================================"
-      - "🐐 KUBERNETES GOAT DEPLOYMENT COMPLETE! 🐐"
+      - "🐐 KUBERNETES GOAT DEPLOYMENT SUMMARY 🐐"
       - "================================================================"
-      - "✅ Port forwarding service is running automatically"
-      - "✅ All scenarios are accessible over the network"
+      - "📊 Deployment Status:"
+      - "  Service Status: {{ service_status.status.ActiveState | default('unknown') }}"
+      - "  Port Forwarding Processes: {{ kubectl_processes.stdout_lines | length }} found"
+      - "  Listening Ports: {{ successful_ports }}/{{ total_ports }} successful"
+      - "  Pod Status: {{ 'Available' if pod_status.rc == 0 else 'Check logs' }}"
       - ""
-      - "🌐 Access URLs:"
+      - "🌐 Access Information:"
       - "  Main interface: http://{{ server_ip }}:{{ kubernetes_goat_main_port }}"
       - "  All scenario ports: {{ kubernetes_goat_scenario_ports | join(', ') }}"
       - ""
-      - "🔧 Service management:"
-      - "  Check status: systemctl status kubernetes-goat-portforward"
+      - "🔧 Debugging Commands:"
+      - "  Check service: systemctl status kubernetes-goat-portforward"
       - "  View logs: journalctl -u kubernetes-goat-portforward -f"
-      - "  Restart: systemctl restart kubernetes-goat-portforward"
+      - "  Check script log: tail -f /var/log/kubernetes-goat-portforward.log"
+      - "  Test ports: ss -tlnp | grep -E ':(1230|1231|1232|1233|1234|1235|1236)'"
+      - "  Check processes: ps aux | grep kubectl.*port-forward"
       - ""
-      - "📝 Note: No need to run access-kubernetes-goat.sh manually!"
+      - "🚨 Status: {{ 'SUCCESS - All ports accessible' if successful_ports|int == total_ports|int else 'WARNING - Some ports may not be accessible' }}"
       - "================================================================"
+
+- name: Automated curl test to main interface
+  uri:
+    url: "http://{{ server_ip }}:{{ kubernetes_goat_main_port }}"
+    method: GET
+    timeout: 10
+  register: curl_test
+  failed_when: false
+
+- name: Display curl test result
+  debug:
+    msg:
+      - "=== CONNECTIVITY TEST ==="
+      - "Main interface test: {{ 'SUCCESS' if curl_test.status == 200 else 'FAILED - Status: ' + (curl_test.status|string if curl_test.status is defined else 'Connection failed') }}"

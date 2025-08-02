@@ -4,14 +4,17 @@ After=docker.service
 Wants=docker.service
 
 [Service]
-Type=simple
+Type=forking
 User=root
 WorkingDirectory={{ kubernetes_goat_path }}
 Environment=KUBECONFIG=/root/.kube/config
-ExecStartPre=/bin/bash -c 'until kubectl get pods -l app=kubernetes-goat-home -o jsonpath="{.items[0].status.phase}" | grep -q Running; do sleep 5; done'
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStartPre=/bin/bash -c 'until /usr/local/bin/kubectl get pods -l app=kubernetes-goat-home -o jsonpath="{.items[0].status.phase}" | grep -q Running; do sleep 5; done'
 ExecStart=/bin/bash {{ kubernetes_goat_path }}/access-kubernetes-goat-network.sh
 Restart=always
 RestartSec=10
+StandardOutput=append:/var/log/kubernetes-goat-portforward.log
+StandardError=append:/var/log/kubernetes-goat-portforward.log
 
 [Install]
 WantedBy=multi-user.target
