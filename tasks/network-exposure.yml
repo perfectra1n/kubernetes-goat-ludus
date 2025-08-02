@@ -56,6 +56,10 @@
   register: port_check
   become: true
 
+- name: Check if any ports failed
+  set_fact:
+    any_port_failed: "{{ port_check.results | selectattr('failed', 'defined') | selectattr('failed') | list | length > 0 }}"
+
 - name: Display port check failures
   debug:
     msg: "Failed to connect to port {{ item.item }} after 300 seconds"
@@ -65,13 +69,13 @@
 - name: Show listening ports for debugging
   command: netstat -tlnp
   register: listening_ports
-  when: port_check.failed is defined and port_check.failed
+  when: any_port_failed
   become: true
 
 - name: Display listening ports
   debug:
     msg: "Currently listening ports: {{ listening_ports.stdout_lines }}"
-  when: listening_ports is defined and listening_ports.stdout_lines is defined
+  when: any_port_failed and listening_ports is defined
 
 # Install ufw if not present
 - name: Install ufw
