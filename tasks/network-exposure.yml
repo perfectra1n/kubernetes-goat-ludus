@@ -65,13 +65,13 @@
 - name: Show listening ports for debugging
   command: netstat -tlnp
   register: listening_ports
-  when: port_check.failed is defined
+  when: port_check.failed is defined and port_check.failed
   become: true
 
 - name: Display listening ports
   debug:
     msg: "Currently listening ports: {{ listening_ports.stdout_lines }}"
-  when: listening_ports is defined
+  when: listening_ports is defined and listening_ports.stdout_lines is defined
 
 # Install ufw if not present
 - name: Install ufw
