@@ -48,6 +48,10 @@ kubernetes_goat_scenario_ports:
 
 ## Using with Ludus
 
+### Important: Ludus Networking Requirements
+
+Kubernetes Goat requires specific network rules to access its services (ports 1230-1236). By default, Ludus only allows SSH (port 22) access to VMs. The role automatically configures firewall rules on the VM itself, but you must also configure Ludus network rules to allow traffic through the Ludus router.
+
 ### Step 1: Install the Role
 
 Add this role to your Ludus instance using the official Ludus command:
@@ -69,7 +73,7 @@ Get your current range configuration and add the Kubernetes Goat VM:
 ludus range config get > config.yml
 ```
 
-Edit your `config.yml` to include a VM with the kubernetes-goat role:
+Edit your `config.yml` to include a VM with the kubernetes-goat role **and the required network rules**:
 
 ```yaml
 ludus:
@@ -86,7 +90,24 @@ ludus:
       block_internet: false  # Needs internet to download components
     roles:
       - kubernetes-goat-ludus
+
+# IMPORTANT: Network rules are required to access Kubernetes Goat services
+# Without these rules, only SSH (port 22) will be accessible
+network:
+  inter_vlan_default: REJECT
+  rules:
+    - name: Allow access to Kubernetes Goat services
+      vlan_src: 20  # Adjust source VLAN as needed
+      vlan_dst: 20
+      protocol: tcp
+      ports: 1230:1236
+      action: ACCEPT
 ```
+
+**Network Configuration Notes:**
+- `vlan_src: 20` allows access from VLAN 20 (same as target VM). Adjust this based on where you'll be accessing from
+- If accessing from an attacker VM on a different VLAN, change `vlan_src` to match that VLAN
+- For access from the Ludus host or external networks, consult the [Ludus networking documentation](https://docs.ludus.cloud/docs/networking/)
 
 ### Step 3: Deploy Your Range
 
@@ -188,7 +209,11 @@ sudo journalctl -u kubernetes-goat-portforward -f
 
 1. **Pods not starting**: Check if Docker service is running and user is in docker group
 2. **Port forwarding fails**: Ensure all pods are in Running state before starting the service
-3. **Network access issues**: Verify firewall rules allow traffic on ports 1230-1236
+3. **Network access issues**: This is usually a Ludus network rules problem, not a VM firewall issue
+   - **Symptom**: Only SSH (port 22) is accessible via nmap/port scanning
+   - **Cause**: Missing network rules in your Ludus range configuration
+   - **Solution**: Ensure your `config.yml` includes the network rules section shown in Step 2
+   - **Note**: The role automatically configures VM-level firewall rules; the blocking occurs at the Ludus router level
 
 ### Manual Commands
 
