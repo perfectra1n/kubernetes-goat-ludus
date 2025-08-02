@@ -97,7 +97,7 @@
 - name: Display Kubernetes Goat deployment summary
   debug:
     msg: "{{ hostvars[inventory_hostname]['goat_deployment']['stdout_lines'] }}"
-  when: hostvars[inventory_hostname]['goat_deployment'] is defined and hostvars[inventory_hostname]['goat_deployment']['stdout_lines'] is defined
+  when: hostvars[inventory_hostname]['goat_deployment'] is defined and hostvars[inventory_hostname]['goat_deployment']['stdout_lines'] is defined and hostvars[inventory_hostname]['goat_status']['stdout'] != 'deployed'
 
 - name: Display access information
   debug:

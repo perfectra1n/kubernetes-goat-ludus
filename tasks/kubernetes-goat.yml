@@ -1,4 +1,14 @@
 ---
+- name: Check if Kubernetes Goat is already deployed
+  shell: |
+    helm list -q | grep -q "metadata-db" && echo "deployed" || echo "not-deployed"
+  register: goat_status
+  changed_when: false
+  become: true
+  environment:
+    KUBECONFIG: /root/.kube/config
+  ignore_errors: true
+
 - name: Clone Kubernetes Goat repository
   git:
     repo: "{{ kubernetes_goat_repo }}"
@@ -28,9 +38,15 @@
     KUBECONFIG: /root/.kube/config
   register: goat_deployment
   become: true
-  failed_when: goat_deployment.rc != 0
+  failed_when: goat_deployment.rc != 0 and 'cannot re-use a name that is still in use' not in goat_deployment.stderr
+  when: goat_status.stdout != "deployed"
+
+- name: Skip deployment if already deployed
+  debug:
+    msg: "Kubernetes Goat is already deployed, skipping deployment"
+  when: goat_status.stdout == "deployed"
 
 - name: Display Kubernetes Goat setup errors if any
   debug:
     msg: "Setup errors: {{ goat_deployment.stderr_lines }}"
-  when: goat_deployment.stderr_lines is defined and goat_deployment.stderr_lines | length > 0
+  when: goat_deployment is defined and goat_deployment.stderr_lines is defined and goat_deployment.stderr_lines | length > 0 and 'cannot re-use a name that is still in use' not in goat_deployment.stderr
