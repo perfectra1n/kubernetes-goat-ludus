@@ -28,6 +28,17 @@
     KUBECONFIG: /root/.kube/config
   register: goat_deployment
   become: true
+  failed_when: goat_deployment.rc != 0
+
+- name: Display Kubernetes Goat setup output
+  debug:
+    msg: "{{ goat_deployment.stdout_lines }}"
+  when: goat_deployment.stdout_lines is defined
+
+- name: Display Kubernetes Goat setup errors if any
+  debug:
+    msg: "Setup errors: {{ goat_deployment.stderr_lines }}"
+  when: goat_deployment.stderr_lines is defined and goat_deployment.stderr_lines | length > 0
 
 - name: Wait for all pods to be ready
   shell: kubectl get pods --all-namespaces --field-selector=status.phase!=Running,status.phase!=Succeeded

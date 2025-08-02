@@ -35,6 +35,17 @@
   delay: 5
   become: true
 
+- name: Check service logs if not active
+  command: journalctl -u kubernetes-goat-portforward --no-pager -n 20
+  register: service_logs
+  when: service_status.status.ActiveState != "active"
+  become: true
+
+- name: Display service logs if service failed
+  debug:
+    msg: "Service logs: {{ service_logs.stdout_lines }}"
+  when: service_status.status.ActiveState != "active" and service_logs is defined
+
 - name: Wait for ports to be listening
   wait_for:
     port: "{{ item }}"
@@ -42,7 +53,25 @@
     timeout: 300
     delay: 10
   loop: "{{ kubernetes_goat_scenario_ports }}"
+  register: port_check
   become: true
+
+- name: Display port check failures
+  debug:
+    msg: "Failed to connect to port {{ item.item }} after 300 seconds"
+  loop: "{{ port_check.results }}"
+  when: item.failed is defined and item.failed
+
+- name: Show listening ports for debugging
+  command: netstat -tlnp
+  register: listening_ports
+  when: port_check.failed is defined
+  become: true
+
+- name: Display listening ports
+  debug:
+    msg: "Currently listening ports: {{ listening_ports.stdout_lines }}"
+  when: listening_ports is defined
 
 # Install ufw if not present
 - name: Install ufw
