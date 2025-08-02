@@ -6,11 +6,11 @@ Wants=docker.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-User=root
+User={{ ansible_user }}
 WorkingDirectory={{ kubernetes_goat_path }}
-Environment=KUBECONFIG=/root/.kube/config
+Environment=KUBECONFIG=/home/{{ ansible_user }}/.kube/config
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
-ExecStartPre=/bin/bash -c 'until /usr/local/bin/kubectl get pods -l app=kubernetes-goat-home -o jsonpath="{.items[0].status.phase}" | grep -q Running; do sleep 5; done'
+ExecStartPre=/bin/bash -c 'export KUBECONFIG=/home/{{ ansible_user }}/.kube/config && until /usr/local/bin/kubectl --context kind-{{ kind_cluster_name }} get pods -l app=kubernetes-goat-home -o jsonpath="{.items[0].status.phase}" | grep -q Running; do sleep 5; done'
 ExecStart=/bin/bash {{ kubernetes_goat_path }}/access-kubernetes-goat-network.sh
 ExecStop=/bin/bash -c 'if [ -f /var/run/kubernetes-goat-pids.txt ]; then while read pid; do kill $pid 2>/dev/null || true; done < /var/run/kubernetes-goat-pids.txt; rm -f /var/run/kubernetes-goat-pids.txt; fi'
 StandardOutput=append:/var/log/kubernetes-goat-portforward.log

@@ -13,11 +13,11 @@
       - "kubectl version: {{ kubectl_version_check.stdout | default('kubectl not found or not accessible') }}"
 
 - name: Check if KIND cluster is running
-  command: /usr/local/bin/kubectl cluster-info
+  command: /usr/local/bin/kubectl --context kind-{{ kind_cluster_name }} cluster-info
   register: cluster_info
   environment:
-    KUBECONFIG: /root/.kube/config
-  become: true
+    KUBECONFIG: /home/{{ ansible_user }}/.kube/config
+  become_user: "{{ ansible_user }}"
   failed_when: false
 
 - name: Display cluster status
@@ -179,12 +179,26 @@
     msg: "Port {{ item.item }}: {{ 'OPEN' if item.state is defined and item.state == 'started' else 'CLOSED' }}"
   loop: "{{ local_port_test.results }}"
 
+- name: Check what deployments actually exist
+  command: /usr/local/bin/kubectl --context kind-{{ kind_cluster_name }} get deployments --all-namespaces
+  register: all_deployments
+  environment:
+    KUBECONFIG: /home/{{ ansible_user }}/.kube/config
+  become_user: "{{ ansible_user }}"
+  failed_when: false
+
+- name: Display all deployments
+  debug:
+    msg:
+      - "=== ALL DEPLOYMENTS ==="
+      - "{{ all_deployments.stdout_lines | default(['Could not get deployments']) }}"
+
 - name: Check Kubernetes Goat pod status
-  command: /usr/local/bin/kubectl get pods --all-namespaces -o wide
+  command: /usr/local/bin/kubectl --context kind-{{ kind_cluster_name }} get pods --all-namespaces -o wide
   register: pod_status
   environment:
-    KUBECONFIG: /root/.kube/config
-  become: true
+    KUBECONFIG: /home/{{ ansible_user }}/.kube/config
+  become_user: "{{ ansible_user }}"
   failed_when: false
 
 - name: Display pod status
@@ -192,6 +206,20 @@
     msg:
       - "=== KUBERNETES POD STATUS ==="
       - "{{ pod_status.stdout_lines | default(['Could not get pod status']) }}"
+
+- name: Check services too
+  command: /usr/local/bin/kubectl --context kind-{{ kind_cluster_name }} get services --all-namespaces
+  register: all_services
+  environment:
+    KUBECONFIG: /home/{{ ansible_user }}/.kube/config
+  become_user: "{{ ansible_user }}"
+  failed_when: false
+
+- name: Display all services
+  debug:
+    msg:
+      - "=== ALL SERVICES ==="
+      - "{{ all_services.stdout_lines | default(['Could not get services']) }}"
 
 - name: Check if PID file exists
   stat:

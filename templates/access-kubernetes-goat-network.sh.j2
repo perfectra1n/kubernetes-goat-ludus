@@ -5,7 +5,8 @@
 
 BIND_ADDRESS="{{ kubernetes_goat_bind_address }}"
 LOG_FILE="/var/log/kubernetes-goat-portforward.log"
-KUBECTL="/usr/local/bin/kubectl"
+KUBECTL="/usr/local/bin/kubectl --context kind-{{ kind_cluster_name }}"
+export KUBECONFIG="/home/{{ ansible_user }}/.kube/config"
 
 # Logging function
 log() {
@@ -74,62 +75,77 @@ rm -f /var/run/kubernetes-goat-pids.txt
 # Start port forwarding for each service
 log "Setting up port forwarding..."
 
-# Use the actual deployment names from the upstream script
-# Sensitive keys in code bases (build-code deployment)
-log "Checking for build-code deployment..."
-if $KUBECTL get deployment build-code -n default >/dev/null 2>&1; then
-    start_port_forward "build-code" 1230 3000 "build-code"
-else
-    log "WARNING: build-code deployment not found"
-fi
+# First, let's see what deployments actually exist
+log "Discovering available deployments..."
+$KUBECTL get deployments --all-namespaces --no-headers 2>/dev/null | while read namespace name ready uptodate available age; do
+    log "Found deployment: $name in namespace: $namespace"
+done
 
-# DIND (docker-in-docker) exploitation scenario (health-check deployment)
-log "Checking for health-check deployment..."
-if $KUBECTL get deployment health-check -n default >/dev/null 2>&1; then
-    start_port_forward "health-check" 1231 1234 "health-check"
-else
-    log "WARNING: health-check deployment not found"
-fi
+# Try multiple possible deployment names for each port
+# Port 1230 - Sensitive keys scenario
+for deployment in "build-code" "sensitive-keys-in-code-bases" "build-code-deployment"; do
+    if $KUBECTL get deployment "$deployment" -n default >/dev/null 2>&1; then
+        log "Found deployment for port 1230: $deployment"
+        start_port_forward "$deployment" 1230 3000 "$deployment"
+        break
+    fi
+done
 
-# SSRF in Kubernetes scenario (internal-proxy deployment)
-log "Checking for internal-proxy deployment..."
-if $KUBECTL get deployment internal-proxy -n default >/dev/null 2>&1; then
-    start_port_forward "internal-proxy" 1232 3000 "internal-proxy"
-else
-    log "WARNING: internal-proxy deployment not found"
-fi
+# Port 1231 - DIND scenario  
+for deployment in "health-check" "dind-exploitation" "health-check-deployment"; do
+    if $KUBECTL get deployment "$deployment" -n default >/dev/null 2>&1; then
+        log "Found deployment for port 1231: $deployment"
+        start_port_forward "$deployment" 1231 1234 "$deployment"
+        break
+    fi
+done
 
-# Container escape scenario (hunger-check deployment in big-monolith namespace)
-log "Checking for hunger-check deployment in big-monolith namespace..."
-if $KUBECTL get deployment hunger-check -n big-monolith >/dev/null 2>&1; then
-    start_port_forward "hunger-check" 1233 1234 "hunger-check" "big-monolith"
-else
-    log "WARNING: hunger-check deployment not found in big-monolith namespace"
-fi
+# Port 1232 - SSRF scenario
+for deployment in "internal-proxy" "ssrf-in-kubernetes" "internal-proxy-deployment"; do
+    if $KUBECTL get deployment "$deployment" -n default >/dev/null 2>&1; then
+        log "Found deployment for port 1232: $deployment"
+        start_port_forward "$deployment" 1232 3000 "$deployment"
+        break
+    fi
+done
 
-# Kubernetes Goat home page
-log "Checking for kubernetes-goat-home deployment..."
-if $KUBECTL get deployment kubernetes-goat-home -n default >/dev/null 2>&1; then
-    start_port_forward "kubernetes-goat-home" 1234 1234 "kubernetes-goat-home"
-else
-    log "WARNING: kubernetes-goat-home deployment not found"
-fi
+# Port 1233 - Container escape (try both default and big-monolith namespaces)
+for namespace in "big-monolith" "default"; do
+    for deployment in "hunger-check" "container-escape" "hunger-check-deployment"; do
+        if $KUBECTL get deployment "$deployment" -n "$namespace" >/dev/null 2>&1; then
+            log "Found deployment for port 1233: $deployment in namespace: $namespace"
+            start_port_forward "$deployment" 1233 1234 "$deployment" "$namespace"
+            break 2
+        fi
+    done
+done
 
-# Private registry attack scenario
-log "Checking for poor-registry deployment..."
-if $KUBECTL get deployment poor-registry -n default >/dev/null 2>&1; then
-    start_port_forward "poor-registry" 1235 1234 "poor-registry"
-else
-    log "WARNING: poor-registry deployment not found"
-fi
+# Port 1234 - Main interface
+for deployment in "kubernetes-goat-home" "kubernetes-goat-home-deployment" "goat-home"; do
+    if $KUBECTL get deployment "$deployment" -n default >/dev/null 2>&1; then
+        log "Found deployment for port 1234: $deployment"
+        start_port_forward "$deployment" 1234 1234 "$deployment"
+        break
+    fi
+done
 
-# DoS resources scenario
-log "Checking for system-monitor deployment..."
-if $KUBECTL get deployment system-monitor -n default >/dev/null 2>&1; then
-    start_port_forward "system-monitor" 1236 1234 "system-monitor"
-else
-    log "WARNING: system-monitor deployment not found"
-fi
+# Port 1235 - Registry scenario
+for deployment in "poor-registry" "private-registry" "poor-registry-deployment"; do
+    if $KUBECTL get deployment "$deployment" -n default >/dev/null 2>&1; then
+        log "Found deployment for port 1235: $deployment"
+        start_port_forward "$deployment" 1235 1234 "$deployment"
+        break
+    fi
+done
+
+# Port 1236 - DoS scenario
+for deployment in "system-monitor" "dos-resources" "system-monitor-deployment"; do
+    if $KUBECTL get deployment "$deployment" -n default >/dev/null 2>&1; then
+        log "Found deployment for port 1236: $deployment"
+        start_port_forward "$deployment" 1236 1234 "$deployment"
+        break
+    fi
+done
 
 log "Port forwarding setup complete"
 log "Kubernetes Goat is accessible on:"
